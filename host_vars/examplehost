@@ -1,0 +1,13 @@
+---
+
+# may_wipe_system: YesWipeSystem
+
+boot_disk: /dev/sda
+
+target_release: jessie
+
+network:
+  eth0:
+    address: 10.20.30.40
+    netmask: 255.255.255.0
+    gateway: 10.20.30.1
