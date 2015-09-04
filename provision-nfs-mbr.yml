@@ -72,7 +72,6 @@
 
     - set_fact:
         boot_disk: '{{ readlink.stdout }}'
-      delegate_to: rescue-{{ inventory_hostname }}
 
     - set_fact:
         dev_boot: '{{ boot_disk }}1'
