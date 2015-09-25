@@ -14,4 +14,4 @@ Obviously, this will wipe that host, so be carefull and better read the
 playbook first...
 
 If you discover bugs, ideas or feature requests, please use github's issue
-tracker for this repository at https://github.com/youam/ansible-provision/issues etc
+tracker for this repository at https://github.com/youam/ansible-bootstrap/issues etc
