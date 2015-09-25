@@ -2,7 +2,7 @@
 # partition table of devicefile
 unit: sectors
 
-raw1 : start=     2048, size=   262144, Id=83, bootable
-raw2 : start=   264192, size=         , Id=8e
+raw1 : start=     2048, size=   524288, Id=83, bootable
+raw2 : start=   526336, size=         , Id=83
 raw3 : start=        0, size=        0, Id= 0
 raw4 : start=        0, size=        0, Id= 0
