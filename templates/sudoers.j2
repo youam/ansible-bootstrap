@@ -1,5 +1,5 @@
 # this sudoers file gives the ansible proxy user named "ansible" passwordless
 # sudo access rights as everyone
 
-ansible    ALL=(ALL) NOPASSWD: ALL
+{{ ansible_role_account }}   ALL=(ALL) NOPASSWD: ALL
 
