@@ -90,7 +90,7 @@
 
     - set_fact:
         dev_boot: '{{ boot_disk }}1'
-        dev_pv: '{{ boot_disk }}2'
+        dev_root: '{{ boot_disk }}2'
 
     - name: disable auto-configured lvm, if it's there
       command: vgchange -an
@@ -109,7 +109,7 @@
       delegate_to: '{{ jumphost }}'
 
     - name: create pv
-      command: pvcreate --force --force --yes {{ dev_pv }}
+      command: pvcreate --force --force --yes {{ dev_root }}
       delegate_to: '{{ jumphost }}'
 
     - name: create vg
@@ -120,8 +120,14 @@
       command: lvcreate -L 8G -n root vg
       delegate_to: '{{ jumphost }}'
 
+    - set_fact:
+        dev_pv: '{{ dev_root }}'
+
+    - set_fact:
+        dev_root: '/dev/vg/root'
+
     - name: format root volume
-      command: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root /dev/vg/root
+      command: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root {{ dev_root }}
       delegate_to: '{{ jumphost }}'
 
     - name: create mountpoint for system installation
@@ -129,7 +135,7 @@
       delegate_to: '{{ jumphost }}'
 
     - name: mount root file system
-      command: mount /dev/vg/root {{ dir_root }}
+      command: mount {{ dev_root }} {{ dir_root }}
       delegate_to: '{{ jumphost }}'
 
     - command: mkdir {{ dir_root }}/boot
