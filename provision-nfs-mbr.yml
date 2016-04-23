@@ -93,7 +93,7 @@
         dev_pv: '{{ boot_disk }}2'
 
     - name: disable auto-configured lvm, if it's there
-      shell: vgchange -an
+      command: vgchange -an
       delegate_to: '{{ jumphost }}'
 
     - name: copy partition table dump
@@ -105,47 +105,52 @@
       delegate_to: '{{ jumphost }}'
 
     - name: format boot partition
-      shell: 'mkfs.ext3 -L boot {{ dev_boot }}'
+      command: 'mkfs.ext3 -L boot {{ dev_boot }}'
       delegate_to: '{{ jumphost }}'
 
     - name: create pv
-      shell: pvcreate --force --force --yes {{ dev_pv }}
+      command: pvcreate --force --force --yes {{ dev_pv }}
       delegate_to: '{{ jumphost }}'
 
     - name: create vg
-      shell: vgcreate vg {{ dev_pv }}
+      command: vgcreate vg {{ dev_pv }}
       delegate_to: '{{ jumphost }}'
 
     - name: create root volume
-      shell: lvcreate -L 8G -n root vg
+      command: lvcreate -L 8G -n root vg
       delegate_to: '{{ jumphost }}'
 
     - name: format root volume
-      shell: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root /dev/vg/root
+      command: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root /dev/vg/root
       delegate_to: '{{ jumphost }}'
 
     - name: create mountpoint for system installation
-      shell: 'mkdir -p {{ dir_root }}'
+      file: dest={{ dir_root }} state=directory
       delegate_to: '{{ jumphost }}'
 
     - name: mount root file system
-      shell: 'mount /dev/vg/root {{ dir_root }}'
+      command: mount /dev/vg/root {{ dir_root }}
       delegate_to: '{{ jumphost }}'
 
-    - shell: mkdir {{ dir_root }}/boot
+    - command: mkdir {{ dir_root }}/boot
       delegate_to: '{{ jumphost }}'
 
-    - shell: mount {{ dev_boot }} {{ dir_root }}/boot
+    - command: mount {{ dev_boot }} {{ dir_root }}/boot
       delegate_to: '{{ jumphost }}'
 
     ###########################################################################
     ## Scene 2: install target system os into chroot
 
     - name: debootstrap base system
-      shell: debootstrap --include lvm2,sudo,openssh-server,linux-image-amd64,grub-pc,busybox,firmware-linux-free,dropbear,kbd,console-setup,python,aptitude {{ target_release }} {{ dir_root }} http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian
+      command: debootstrap --include lvm2,sudo,openssh-server,linux-image-amd64,grub-pc,busybox,firmware-linux-free,dropbear,kbd,console-setup,python,aptitude {{ target_release }} {{ dir_root }} http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian
       delegate_to: '{{ jumphost }}'
 
-    - shell: for n in dev dev/pts sys proc; do mount --bind /$n {{ dir_root }}/$n; done
+    - command: 'mount --bind /{{ item }} {{ dir_root }}/{{ item }}'
+      with_items:
+        - dev
+        - dev/pts
+        - proc
+        - sys
       delegate_to: '{{ jumphost }}'
 
     - name: switch ssh port to 516
@@ -227,7 +232,7 @@
       ignore_errors: True
 
     - name: install python-apt (for lsb-release)
-      shell: aptitude install --assume-yes python-apt
+      command: aptitude install --assume-yes python-apt
       when: result|failed
 
     - name: install lsb-release (try again)
