@@ -77,6 +77,9 @@
     ## Scene 1: configure target system's devices
     # reformat hard drives and setup raid and so on
 
+    - set_fact:
+        dir_root: /mnt/root
+
     - name: discover device name
       command: 'readlink -f {{ boot_disk }}'
       register: readlink
@@ -122,34 +125,34 @@
       delegate_to: '{{ jumphost }}'
 
     - name: create mountpoint for system installation
-      shell: mkdir -p /mnt/root
+      shell: 'mkdir -p {{ dir_root }}'
       delegate_to: '{{ jumphost }}'
 
     - name: mount root file system
-      shell: mount /dev/vg/root /mnt/root
+      shell: 'mount /dev/vg/root {{ dir_root }}'
       delegate_to: '{{ jumphost }}'
 
-    - shell: mkdir /mnt/root/boot
+    - shell: mkdir {{ dir_root }}/boot
       delegate_to: '{{ jumphost }}'
 
-    - shell: mount {{ dev_boot }} /mnt/root/boot
+    - shell: mount {{ dev_boot }} {{ dir_root }}/boot
       delegate_to: '{{ jumphost }}'
 
     ###########################################################################
     ## Scene 2: install target system os into chroot
 
     - name: debootstrap base system
-      shell: debootstrap --include lvm2,sudo,openssh-server,linux-image-amd64,grub-pc,busybox,firmware-linux-free,dropbear,kbd,console-setup,python,aptitude {{ target_release }} /mnt/root http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian
+      shell: debootstrap --include lvm2,sudo,openssh-server,linux-image-amd64,grub-pc,busybox,firmware-linux-free,dropbear,kbd,console-setup,python,aptitude {{ target_release }} {{ dir_root }} http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian
       delegate_to: '{{ jumphost }}'
 
-    - shell: for n in dev dev/pts sys proc; do mount --bind /$n /mnt/root/$n; done
+    - shell: for n in dev dev/pts sys proc; do mount --bind /$n {{ dir_root }}/$n; done
       delegate_to: '{{ jumphost }}'
 
     - name: switch ssh port to 516
-      lineinfile: "dest=/mnt/root/etc/ssh/sshd_config line='Port 516' regexp='^Port'"
+      lineinfile: "dest={{ dir_root }}/etc/ssh/sshd_config line='Port 516' regexp='^Port'"
       delegate_to: '{{ jumphost }}'
 
-    - command: chroot /mnt/root service ssh start
+    - command: chroot {{ dir_root }} service ssh start
       delegate_to: '{{ jumphost }}'
 
     - name: fetch remote ssh host key
@@ -172,29 +175,29 @@
     # pre-play role/prepare
 
     - name: Add ansible role account
-      command: 'chroot /mnt/root adduser --uid 1200 --disabled-password --gecos "ansible user" {{ ansible_role_account }}'
+      command: 'chroot {{ dir_root }} adduser --uid 1200 --disabled-password --gecos "ansible user" {{ ansible_role_account }}'
       args:
-        creates: '/mnt/root/home/{{ ansible_role_account }}'
+        creates: '{{ dir_root }}/home/{{ ansible_role_account }}'
       delegate_to: '{{ jumphost }}'
 
     - name: Create SSH directory
       # copy with wrong file modes as we're copying into the rescue system. will be fixed below
-      file: path=/mnt/root/home/{{ ansible_role_account }}/.ssh state=directory owner=root mode=755
+      file: path={{ dir_root }}/home/{{ ansible_role_account }}/.ssh state=directory owner=root mode=755
       delegate_to: '{{ jumphost }}'
 
     - name: Copy authorized_keys for ansible remote user
       # copy with wrong file modes as we're copying into the rescue system. will be fixed below
-      copy: src=files/ansible_authorized_keys dest=/mnt/root/home/{{ ansible_role_account }}/.ssh/authorized_keys owner=root group=root mode=444
+      copy: src=files/ansible_authorized_keys dest={{ dir_root }}/home/{{ ansible_role_account }}/.ssh/authorized_keys owner=root group=root mode=444
       delegate_to: '{{ jumphost }}'
 
     - name: Install sudoers
-      command: chroot /mnt/root aptitude install sudo
+      command: chroot {{ dir_root }} aptitude install sudo
       args:
-        creates: /mnt/root/usr/bin/sudo
+        creates: '{{ dir_root }}/usr/bin/sudo'
       delegate_to: '{{ jumphost }}'
 
     - name: Copy sudoers
-      template: src=templates/sudoers.j2 dest=/mnt/root/etc/sudoers.d/ansible group=root owner=root mode=440
+      template: src=templates/sudoers.j2 dest={{ dir_root }}/etc/sudoers.d/ansible group=root owner=root mode=440
       delegate_to: '{{ jumphost }}'
 
 # for some reason, we've lost our apt sources list
