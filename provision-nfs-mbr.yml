@@ -34,7 +34,7 @@
 # should better go to /etc/ssh/ssh_known_hosts
     - name: fetch remote ssh host key for rescue host
       delegate_to: localhost
-      sudo: false
+      become: false
       # use the ansible_ssh_host var here, as inventory_hostname may not be resolvable yet
       shell: ssh-keyscan -t rsa {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
       register: hostkeys
@@ -42,7 +42,7 @@
     - name: update current ssh host key for rescue host
       # FIXME this doesn't work correctly when hostkeys.stdout contains more than one key
       delegate_to: localhost
-      sudo: false
+      become: false
       lineinfile:
         dest: "{{ lookup('env', 'HOME' )}}/.ssh/known_hosts"
         backup: yes
@@ -168,14 +168,14 @@
 
     - name: fetch remote ssh host key
       delegate_to: localhost
-      sudo: false
+      become: false
       shell: ssh-keyscan -t ecdsa -p 516 {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
       register: hostkeys
       changed_when: false
 
     - name: update current ssh host key
       delegate_to: localhost
-      sudo: false
+      become: false
       # FIXME this doesn't work correctly when hostkeys.stdout contains more than one key
       lineinfile:
         dest: "{{ lookup('env', 'HOME' )}}/.ssh/known_hosts"
@@ -215,7 +215,6 @@
 - hosts: 'reimage_nfs'
   accelerate: false
   gather_facts: no
-  sudo: yes
 
   tasks:
     - lineinfile:
@@ -228,7 +227,6 @@
 - hosts: 'reimage_nfs'
   accelerate: false
   gather_facts: no
-  sudo: yes
 
   tasks:
     # needed for variable discovery
@@ -255,7 +253,6 @@
 #   setup system so that it's rebootable
 - hosts: 'reimage_nfs'
   accelerate: false
-  sudo: yes
 
   tasks:
     - lineinfile:
