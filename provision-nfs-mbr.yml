@@ -1,47 +1,62 @@
 ---
-# XXX FIXME fstab boot
 
-# FIXME check whether the system we're going to connect against is booted into
-#       some live rescue system. Or rather, check whether the system we'd
-#       reimage is done already and we're just re-running this playbook.
-#       Whichever way this might be discovered...
-# For now, check that we're only running against hosts which have a magic
-# passcode set
+# This playbook aims to implement a flexible bare-metal setup.
+
+# For this, we need some way to execute comamnds on the system, as it is, well,
+# bare (or in any unknown state).
+#
+# For newly aquired root servers, this usually is an NFS rescue system.
+# We assume that we're booted into one such system, and that our inventory has
+# that rescue system access configured as 'rescue-{{ inventory_hostname }}' and
+# that we have sufficient credentials to connect there. That rescue system's
+# SSH host key is ignored, as it's usually a throwaway hostkey anyway and we
+# don't have any way to verify it.
+#
+# Bootstrapping of the remote system will happen in a number of steps:
+# 1) before we begin, we check whether we actually should run for this system
+# 2) then, prepare the disk devices by stopping whatever is still using it,
+#    partitioning them, formatting, encrypting, whatever. this step mounts our
+#    filesystems so that we can start installing the operating system
+# 3) the operating system is installed into the prepared disks with debootstrap
+# 4) setup the chroot from the outside so that we can connect there in the next
+#     step. this creates an ansible role account, sets up sshd and sudo.
+# 5) this secondary ssh server is used to do basic preparation of the chroot
+#    from within (bootloaders, networking)
 
 - hosts: 'reimage_nfs'
   accelerate: false
   gather_facts: no
 
   tasks:
-    - set_fact:
+###############################################################################
+## 1) Make sure we're on the correct system and can connect there
+
+    - name: Gather jumphost name for target
+      set_fact:
         jumphost: 'rescue-{{ inventory_hostname }}'
 
-
-    ##########################################################################
-    ## Introduction: make sure we're on the correct system and can connect there
-
-    - name: Verify magic hostvar allowing us to wipe the system
+    - name: Verify magic hostvar allowing us to wipe the target
       assert:
         that:
           - may_wipe_system == "YesWipeSystem"
 
-# As we assume that the target system is bootet into an disposable rescue
-# system, remove the ssh hostkeys for that rescue system from the
-# ~/.ssh/known_hosts file and enter the currently active ones.
-# sadly, most rescue systems don't expose the ssh fingerprint in any way.
-
-# FIXME this records a hash for the IP address of the target system. this
-# should better go to /etc/ssh/ssh_known_hosts
-    - name: Fetch remote ssh host key for rescue host
+    - name: Fetch ssh host key for jumphost
+      # WARNING jumphost is supposed to be a disposable nfsroot rescue system
+      #         which changes its ssh host key on each boot, and which isn't
+      #         verifyable. so just discard the old key and accept the current
+      #         one till we get a better solution. This makes us vulnerable to
+      #         a stupidly simple MITM.
       delegate_to: localhost
       become: false
-      # use the ansible_ssh_host var here, as inventory_hostname may not be resolvable yet
+      # use the ansible_ssh_host var here, as inventory_hostname may not be
+      # resolvable yet
       shell: ssh-keyscan -t rsa {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
       register: hostkeys
       changed_when: false
 
     - name: Update current ssh host key for rescue host
-      # FIXME this doesn't work correctly when hostkeys.stdout contains more than one key
+      # FIXME this doesn't work correctly when hostkeys.stdout contains more
+      #       than one key
       delegate_to: localhost
       become: false
       lineinfile:
@@ -50,16 +65,15 @@
         line: '{{ ansible_ssh_host }},rescue-{{ hostkeys.stdout }}'
         regexp: '{{ ansible_ssh_host }}'
 
-
-    # Connect to rescue system and update the hostname.
-    # Primarilly, this is to check whether we can connect at all: if this step
-    # fails, you're probably running an older ansible version which does not
-    # set the remote user name for the delegation, or can't connect there for
-    # some other reason.
-
-    - name: Set hostname of remote system
-      # FIXME this should only be done when the jumphost is a disposable nfs root,
-      #       but not in case of actual (jump)hosts
+    - name: Set hostname of jumphost
+      # Connect to rescue system and update the hostname.
+      # Primarilly, this is to check whether we can connect at all: if this
+      # step fails, you're probably running an older ansible version which does
+      # not set the remote user name for the delegation, or can't connect there
+      # for some other reason.
+      # FIXME this assumes that the jumphost is disposable and it's own
+      #       hostname doesn't matter. this is not the case for actual
+      #       jumphosts (eg when creating VMs)
       hostname: "name={{ inventory_hostname }}"
       delegate_to: '{{ jumphost }}'
 
@@ -68,11 +82,11 @@
       delegate_to: '{{ jumphost }}'
       with_items:
         - dosfstools
+        # cryptsetup
         - debootstrap
 
-    ###########################################################################
-    ## Scene 1: configure target system's devices
-    # reformat hard drives and setup raid and so on
+###############################################################################
+## 2) Prepare target system disks
 
     - set_fact:
         dir_root: /mnt/root
@@ -141,12 +155,15 @@
     - command: mount {{ dev_boot }} {{ dir_root }}/boot
       delegate_to: '{{ jumphost }}'
 
-    ###########################################################################
-    ## Scene 2: install target system os into chroot
+###############################################################################
+## 3) Install operating system into target system chroot
 
     - name: debootstrap base system
       command: debootstrap --include lvm2,sudo,openssh-server,linux-image-amd64,grub-pc,busybox,firmware-linux-free,dropbear,kbd,console-setup,python,aptitude {{ target_release }} {{ dir_root }} http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian
       delegate_to: '{{ jumphost }}'
+
+###############################################################################
+## 4) Start in-chroot sshd so we can connect there
 
     - command: 'mount --bind /{{ item }} {{ dir_root }}/{{ item }}'
       with_items:
@@ -212,6 +229,9 @@
     - name: Copy sudoers
       template: src=templates/sudoers.j2 dest={{ dir_root }}/etc/sudoers.d/ansible group=root owner=root mode=440
       delegate_to: '{{ jumphost }}'
+
+###############################################################################
+## 5) Setup target system to be rebootable
 
 # for some reason, we've lost our apt sources list
 - hosts: 'reimage_nfs'
