@@ -50,18 +50,6 @@
         regexp: '{{ ansible_ssh_host }}'
 
 
-# FIXME temporarily disabled, because OVH rescue system is mounted read-only.
-# FIXME-we need to handle that correctly
-#
-#    - apt: pkg={{ item }}
-#      delegate_to: '{{ jumphost }}'
-#      with_items:
-#        - dosfstools
-#        - cryptsetup
-#        - debootstrap
-
-
-
     # Connect to rescue system and update the hostname.
     # Primarilly, this is to check whether we can connect at all: if this step
     # fails, you're probably running an older ansible version which does not
@@ -72,6 +60,12 @@
       hostname: "name={{ inventory_hostname }}"
       delegate_to: '{{ jumphost }}'
 
+    - name: Install software on jumphost needed to setup the target system
+      apt: pkg={{ item }}
+      delegate_to: '{{ jumphost }}'
+      with_items:
+        - dosfstools
+        - debootstrap
 
     ###########################################################################
     ## Scene 1: configure target system's devices
@@ -112,6 +106,12 @@
       command: pvcreate --force --force --yes {{ dev_root }}
       delegate_to: '{{ jumphost }}'
 
+    - set_fact:
+        dev_pv: '{{ dev_root }}'
+
+    - set_fact:
+        dev_root: '/dev/vg/root'
+
     - name: create vg
       command: vgcreate vg {{ dev_pv }}
       delegate_to: '{{ jumphost }}'
@@ -119,12 +119,6 @@
     - name: create root volume
       command: lvcreate -L 8G -n root vg
       delegate_to: '{{ jumphost }}'
-
-    - set_fact:
-        dev_pv: '{{ dev_root }}'
-
-    - set_fact:
-        dev_root: '/dev/vg/root'
 
     - name: format root volume
       command: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root {{ dev_root }}
