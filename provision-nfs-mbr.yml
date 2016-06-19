@@ -20,7 +20,7 @@
     ##########################################################################
     ## Introduction: make sure we're on the correct system and can connect there
 
-    - name: make sure we may re-image the system
+    - name: Verify magic hostvar allowing us to wipe the system
       assert:
         that:
           - may_wipe_system == "YesWipeSystem"
@@ -32,14 +32,15 @@
 
 # FIXME this records a hash for the IP address of the target system. this
 # should better go to /etc/ssh/ssh_known_hosts
-    - name: fetch remote ssh host key for rescue host
+    - name: Fetch remote ssh host key for rescue host
       delegate_to: localhost
       become: false
       # use the ansible_ssh_host var here, as inventory_hostname may not be resolvable yet
       shell: ssh-keyscan -t rsa {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
       register: hostkeys
       changed_when: false
-    - name: update current ssh host key for rescue host
+
+    - name: Update current ssh host key for rescue host
       # FIXME this doesn't work correctly when hostkeys.stdout contains more than one key
       delegate_to: localhost
       become: false
@@ -56,7 +57,9 @@
     # set the remote user name for the delegation, or can't connect there for
     # some other reason.
 
-    - name: set hostname of remote system
+    - name: Set hostname of remote system
+      # FIXME this should only be done when the jumphost is a disposable nfs root,
+      #       but not in case of actual (jump)hosts
       hostname: "name={{ inventory_hostname }}"
       delegate_to: '{{ jumphost }}'
 
@@ -192,7 +195,12 @@
 
     - name: Copy authorized_keys for ansible remote user
       # copy with wrong file modes as we're copying into the rescue system. will be fixed below
-      copy: src=files/ansible_authorized_keys dest={{ dir_root }}/home/{{ ansible_role_account }}/.ssh/authorized_keys owner=root group=root mode=444
+      copy:
+        src: files/ansible_authorized_keys
+        dest: '{{ dir_root }}/home/{{ ansible_role_account }}/.ssh/authorized_keys'
+        owner: root
+        group: root
+        mode: 0444
       delegate_to: '{{ jumphost }}'
 
     - name: Install sudoers
@@ -211,7 +219,9 @@
   gather_facts: no
 
   tasks:
-    - lineinfile:
+    - name: Configure minimal sources.list file
+      # when this task fails, probably the files/ansible_authorized_keys pubkey isn't what it should be.
+      lineinfile:
         dest: /etc/apt/sources.list
         line: 'deb http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian {{ target_release }} main'
     - command: apt-get update
@@ -241,7 +251,12 @@
       file: path=/home/{{ ansible_role_account }}/.ssh state=directory owner={{ ansible_role_account }} mode=700
 
     - name: Copy authorized_keys for ansible remote user
-      copy: src=ansible_authorized_keys dest=/home/{{ ansible_role_account }}/.ssh/authorized_keys owner={{ ansible_role_account }} group={{ ansible_role_account }} mode=400
+      copy:
+        src: files/ansible_authorized_keys
+        dest: '/home/{{ ansible_role_account }}/.ssh/authorized_keys'
+        owner: '{{ ansible_role_account }}'
+        group: '{{ ansible_role_account }}'
+        mode: 0400
 
 # third play
 #   setup system so that it's rebootable
