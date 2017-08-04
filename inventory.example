@@ -1,3 +1,3 @@
 [reimage_nfs]
-examplehost                                 ansible_ssh_port=516 ansible_ssh_host=10.20.30.40
-rescue-examplehost ansible_remote_user=root ansible_ssh_port=22  ansible_ssh_host=10.20.30.40 ansible_ssh_pass=SecretRescuePW
+examplehost                              ansible_ssh_port=516 ansible_ssh_host=10.20.30.40
+rescue-examplehost ansible_ssh_user=root ansible_ssh_port=22  ansible_ssh_host=10.20.30.40 ansible_ssh_pass=SecretRescuePW
