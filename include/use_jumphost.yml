@@ -1,0 +1,53 @@
+---
+# As we assume that the target system is bootet into an disposable rescue
+# system, remove the ssh hostkeys for that rescue system from the
+# ~/.ssh/known_hosts file and enter the currently active ones.
+# sadly, most rescue systems don't expose the ssh fingerprint in any way.
+
+- set_fact:
+    jumphost: 'rescue-{{ inventory_hostname }}'
+
+- block:
+    # FIXME this records a hash for the IP address of the target system. this
+    # should better go to /etc/ssh/ssh_known_hosts
+    - name: fetch remote ssh host key for rescue host
+      delegate_to: localhost
+      become: false
+      # use the ansible_ssh_host var here, as inventory_hostname may not be
+      # resolvable yet
+      shell: ssh-keyscan -t rsa {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
+      register: hostkeys
+      changed_when: false
+      always_run: true
+
+    - name: Update current ssh host key for rescue host
+      # FIXME this doesn't work correctly when hostkeys.stdout contains more
+      #       than one key
+      delegate_to: localhost
+      become: false
+      lineinfile:
+        dest: "{{ lookup('env', 'HOME' )}}/.ssh/known_hosts"
+        backup: yes
+        line: '{{jumphost}},{{ hostkeys.stdout }}'
+        regexp: '{{ ansible_ssh_host }}'
+  when: trust == true
+
+- name: set hostname of remote system
+  # Connect to rescue system and update the hostname.
+  # Primarilly, this is to check whether we can connect at all: if this step
+  # fails, you're probably running an older ansible version which does not
+  # set the remote user name for the delegation, or can't connect there for
+  # some other reason.
+  # FIXME this assumes that the jumphost is disposable and it's own
+  #       hostname doesn't matter. this is not the case for actual
+  #       jumphosts (eg when creating VMs)
+  hostname: "name={{ inventory_hostname }}"
+  delegate_to: '{{ jumphost }}'
+
+- name: Install software on jumphost needed to setup the target system
+  apt: pkg={{ item }}
+  delegate_to: '{{ jumphost }}'
+  with_items:
+    - dosfstools
+    - cryptsetup
+    - debootstrap

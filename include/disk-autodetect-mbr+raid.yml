@@ -1,0 +1,82 @@
+---
+
+- setup:
+  delegate_to: '{{ jumphost }}'
+
+- set_fact:
+    dir_root: /mnt/root
+
+
+- name: create mountpoint for system installation
+  file: dest={{ dir_root }} state=directory
+  delegate_to: '{{ jumphost }}'
+
+- set_fact:
+    # discover all devices ansible can find
+    # those will get wiped. don't say i didn't warn you
+    devices: '{{ ansible_devices.keys()|format_list("/dev/%s") }}'
+
+- name: copy partition table dump
+  copy: src=files/sfdisk.boot+root+lvm dest=/tmp/parttable_dump
+  delegate_to: '{{ jumphost }}'
+
+- name: partition devices
+  shell: 'sfdisk -L {{ item }} < /tmp/parttable_dump'
+  delegate_to: '{{ jumphost }}'
+  with_items: '{{ devices }}'
+
+- set_fact:
+    dev_boot: '/dev/md/boot'
+    dev_root: '/dev/md/root'
+
+- name: remove old raid superblocks from partitions
+  shell: mdadm --zero-superblock {{ item }}
+  delegate_to: '{{ jumphost }}'
+  with_items: '{{ devices|format_list("%s1") }}'
+- name: remove old raid superblocks from partitions
+  shell: mdadm --zero-superblock {{ item }}
+  delegate_to: '{{ jumphost }}'
+  with_items: '{{ devices|format_list("%s2") }}'
+
+- name: create 'boot' raid device
+  shell: 'mdadm --create /dev/md3 --raid-devices={{ devices|length }} --level=1 --bitmap=internal --name=boot {{ devices|format_list("%s1")|join(" ") }} --metadata=1.2'
+  delegate_to: '{{ jumphost }}'
+- name: create 'root' raid device
+  shell: 'mdadm --create /dev/md4 --raid-devices={{ devices|length }} --level=1 --bitmap=internal --name=root {{ devices|format_list("%s2")|join(" ") }} --metadata=1.2'
+  delegate_to: '{{ jumphost }}'
+
+# restart mdadm so that udev devices get created.
+# XXX perhaps that can be avoided with --auto=p or something above?
+- command: 'mdadm --stop {{ item }}'
+  delegate_to: '{{ jumphost }}'
+  with_items: [ "/dev/md3", "/dev/md4" ]
+- shell: sed /ARRAY/d -i /etc/mdadm/mdadm.conf
+  delegate_to: '{{ jumphost }}'
+- shell: mdadm --examine --scan >> /etc/mdadm/mdadm.conf
+  delegate_to: '{{ jumphost }}'
+- shell: mdadm --assemble --scan
+  failed_when: false
+  delegate_to: '{{ jumphost }}'
+
+- name: format boot partition
+  command: 'mkfs.ext3 -L boot {{ dev_boot }}'
+  delegate_to: '{{ jumphost }}'
+
+- name: format root volume
+  command: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root {{ dev_root }}
+  delegate_to: '{{ jumphost }}'
+
+- name: mount root file system
+  command: mount {{ dev_root }} {{ dir_root }}
+  delegate_to: '{{ jumphost }}'
+
+- command: mkdir {{ dir_root }}/boot
+  delegate_to: '{{ jumphost }}'
+
+- command: mount {{ dev_boot }} {{ dir_root }}/boot
+  delegate_to: '{{ jumphost }}'
+
+- set_fact:
+    # comma-separated list of extra packages with leading comma
+    extra_packages: ',mdadm,lvm2'
+

@@ -31,135 +31,20 @@
 ###############################################################################
 ## 1) Make sure we're on the correct system and can connect there
 
-    - name: Gather jumphost name for target
-      set_fact:
-        jumphost: 'rescue-{{ inventory_hostname }}'
-
     - name: Verify magic hostvar allowing us to wipe the target
       assert:
         that:
           - may_wipe_system == "YesWipeSystem"
 
-    - name: Fetch ssh host key for jumphost
-      # WARNING jumphost is supposed to be a disposable nfsroot rescue system
-      #         which changes its ssh host key on each boot, and which isn't
-      #         verifyable. so just discard the old key and accept the current
-      #         one till we get a better solution. This makes us vulnerable to
-      #         a stupidly simple MITM.
-      delegate_to: localhost
-      become: false
-      # use the ansible_ssh_host var here, as inventory_hostname may not be
-      # resolvable yet
-      shell: ssh-keyscan -t rsa {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
-      register: hostkeys
-      changed_when: false
+    - include: include/use_jumphost.yml name=rescue-{{ inventory_hostname }} trust=true
 
-    - name: Update current ssh host key for rescue host
-      # FIXME this doesn't work correctly when hostkeys.stdout contains more
-      #       than one key
-      delegate_to: localhost
-      become: false
-      lineinfile:
-        dest: "{{ lookup('env', 'HOME' )}}/.ssh/known_hosts"
-        backup: yes
-        line: '{{ ansible_ssh_host }},rescue-{{ hostkeys.stdout }}'
-        regexp: '{{ ansible_ssh_host }}'
+    - include: include/disk-autodetect-mbr+raid.yml
 
-    - name: Set hostname of jumphost
-      # Connect to rescue system and update the hostname.
-      # Primarilly, this is to check whether we can connect at all: if this
-      # step fails, you're probably running an older ansible version which does
-      # not set the remote user name for the delegation, or can't connect there
-      # for some other reason.
-      # FIXME this assumes that the jumphost is disposable and it's own
-      #       hostname doesn't matter. this is not the case for actual
-      #       jumphosts (eg when creating VMs)
-      hostname: "name={{ inventory_hostname }}"
-      delegate_to: '{{ jumphost }}'
-
-    - name: Install software on jumphost needed to setup the target system
-      apt: pkg={{ item }}
-      delegate_to: '{{ jumphost }}'
-      with_items:
-        - dosfstools
-        # cryptsetup
-        - debootstrap
-
-###############################################################################
-## 2) Prepare target system disks
-
-    - set_fact:
-        dir_root: /mnt/root
-
-    - name: discover device name
-      command: 'readlink -f {{ boot_disk }}'
-      register: readlink
-      delegate_to: '{{ jumphost }}'
-
-    - set_fact:
-        boot_disk: '{{ readlink.stdout }}'
-
-    - set_fact:
-        dev_boot: '{{ boot_disk }}1'
-        dev_root: '{{ boot_disk }}2'
-
-    - name: disable auto-configured lvm, if it's there
-      command: vgchange -an
-      delegate_to: '{{ jumphost }}'
-
-    - name: copy partition table dump
-      copy: src=files/sfdisk.boot+lvm dest=/tmp/sfdisk.boot+lvm
-      delegate_to: '{{ jumphost }}'
-
-    - name: partition boot device
-      shell: 'sfdisk -L {{ boot_disk }} < /tmp/sfdisk.boot+lvm'
-      delegate_to: '{{ jumphost }}'
-
-    - name: format boot partition
-      command: 'mkfs.ext3 -L boot {{ dev_boot }}'
-      delegate_to: '{{ jumphost }}'
-
-    - name: create pv
-      command: pvcreate --force --force --yes {{ dev_root }}
-      delegate_to: '{{ jumphost }}'
-
-    - set_fact:
-        dev_pv: '{{ dev_root }}'
-
-    - set_fact:
-        dev_root: '/dev/vg/root'
-
-    - name: create vg
-      command: vgcreate vg {{ dev_pv }}
-      delegate_to: '{{ jumphost }}'
-
-    - name: create root volume
-      command: lvcreate -L 8G -n root vg
-      delegate_to: '{{ jumphost }}'
-
-    - name: format root volume
-      command: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root {{ dev_root }}
-      delegate_to: '{{ jumphost }}'
-
-    - name: create mountpoint for system installation
-      file: dest={{ dir_root }} state=directory
-      delegate_to: '{{ jumphost }}'
-
-    - name: mount root file system
-      command: mount {{ dev_root }} {{ dir_root }}
-      delegate_to: '{{ jumphost }}'
-
-    - command: mkdir {{ dir_root }}/boot
-      delegate_to: '{{ jumphost }}'
-
-    - command: mount {{ dev_boot }} {{ dir_root }}/boot
-      delegate_to: '{{ jumphost }}'
-
-###############################################################################
-## 3) Install operating system into target system chroot
+    ###########################################################################
+    ## Scene 2: install target system os into chroot
 
     - name: debootstrap base system
-      command: debootstrap --include lvm2,sudo,openssh-server,linux-image-amd64,grub-pc,busybox,firmware-linux-free,dropbear,kbd,console-setup,python,aptitude {{ target_release }} {{ dir_root }} http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian
+      command: debootstrap --include sudo,openssh-server,linux-image-amd64,grub-pc,busybox,firmware-linux-free,dropbear,kbd,console-setup,python,aptitude{{ extra_packages }} {{ target_release }} {{ dir_root }} http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian
       delegate_to: '{{ jumphost }}'
 
 ###############################################################################
@@ -183,7 +68,8 @@
     - name: fetch remote ssh host key
       delegate_to: localhost
       become: false
-      shell: ssh-keyscan -t ecdsa -p 516 {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
+      # ansible resolves ansible_ssh_host to the delegate here, which is localhost. that's not what we want.
+      shell: ssh-keyscan -t ecdsa -p 516 {{ inventory_hostname }} | grep -v '^#' | grep -v '^no hostkey alg$'
       register: hostkeys
       changed_when: false
 
