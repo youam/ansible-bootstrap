@@ -69,7 +69,7 @@
       delegate_to: localhost
       become: false
       # ansible resolves ansible_ssh_host to the delegate here, which is localhost. that's not what we want.
-      shell: ssh-keyscan -t ecdsa -p 516 {{ inventory_hostname }} | grep -v '^#' | grep -v '^no hostkey alg$'
+      shell: ssh-keyscan -t ecdsa -p 516 {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
       register: hostkeys
       changed_when: false
 
