@@ -172,7 +172,7 @@
   tasks:
     - lineinfile:
         dest: /etc/fstab
-        line: '/dev/vg/root /  ext4  errors=remount-ro,user_xattr  0  1'
+        line: '{{ dev_root }}  /  ext4  errors=remount-ro,user_xattr  0  1'
     - lineinfile:
         dest: /etc/fstab
         line: 'LABEL=boot /boot ext3 defaults 0 2'
