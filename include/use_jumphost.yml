@@ -18,7 +18,7 @@
       shell: ssh-keyscan -t rsa {{ ansible_ssh_host }} | grep -v '^#' | grep -v '^no hostkey alg$'
       register: hostkeys
       changed_when: false
-      always_run: true
+      check_mode: no
 
     - name: Update current ssh host key for rescue host
       # FIXME this doesn't work correctly when hostkeys.stdout contains more
