@@ -14,10 +14,16 @@
 - set_fact:
     # discover all devices ansible can find
     # those will get wiped. don't say i didn't warn you
-    devices: '{{ ansible_devices.keys()|format_list("/dev/%s") }}'
+    devices: '{{ ansible_devices.keys()|select("match","sd")|format_list("/dev/%s") }}'
+
+- set_fact:
+    parttable_dump=files/sfdisk.boot+root+lvm
+- set_fact:
+    parttable_dump=files/sfdisk.boot+lvm
+  when: USE_lvm
 
 - name: copy partition table dump
-  copy: src=files/sfdisk.boot+root+lvm dest=/tmp/parttable_dump
+  copy: src={{ parttable_dump }} dest=/tmp/parttable_dump
   delegate_to: '{{ jumphost }}'
 
 - name: partition devices
@@ -62,6 +68,67 @@
   command: 'mkfs.ext3 -L boot {{ dev_boot }}'
   delegate_to: '{{ jumphost }}'
 
+- when: USE_encryption
+  block:
+    #- file: path=/lib/cryptsetup/passfifo state=fifo
+    - shell: rm -rf /tmp/cryptkey ; mkfifo /tmp/cryptkey
+      delegate_to: '{{ jumphost }}'
+
+    # run this command in the background, but check later
+    - shell: cryptsetup luksFormat {{ dev_root }} --key-file /tmp/cryptkey
+      async: 1000
+      poll: 0
+      register: cryptsetup
+      delegate_to: '{{ jumphost }}'
+
+
+    - shell: 'echo {{ secret_root_luks }} > /tmp/cryptkey'
+      delegate_to: '{{ jumphost }}'
+
+    - name: "wait for cryptsetup"
+      async_status: 'jid={{ cryptsetup.ansible_job_id }}'
+      register: job_result
+      until: job_result is defined and job_result.finished is defined and job_result.finished
+      retries: 30
+      delegate_to: '{{ jumphost }}'
+
+
+    # run this command in the background, but check later
+    - shell: cryptsetup luksOpen {{ dev_root }} crypt_root --key-file /tmp/cryptkey
+      async: 1000
+      poll: 0
+      register: cryptsetup
+      delegate_to: '{{ jumphost }}'
+
+    - shell: 'echo {{ secret_root_luks }} > /tmp/cryptkey'
+      delegate_to: '{{ jumphost }}'
+
+    - name: "wait for cryptsetup"
+      async_status: 'jid={{ cryptsetup.ansible_job_id }}'
+      register: job_result
+      until: job_result is defined and job_result.finished is defined and job_result.finished
+      retries: 30
+      delegate_to: '{{ jumphost }}'
+
+    # Switch root/crypt devices
+    - set_fact:
+        dev_crypt: '{{ dev_root }}'
+    - set_fact:
+        dev_root: /dev/mapper/crypt_root
+    - set_fact:
+        extra_packages: ",cryptsetup"
+
+- when: USE_lvm
+  block:
+    - command: pvcreate {{ dev_root }}
+      delegate_to: '{{ jumphost }}'
+    - command: vgcreate vg {{ dev_root }}
+      delegate_to: '{{ jumphost }}'
+    - command: lvcreate -L 16g -n root vg
+      delegate_to: '{{ jumphost }}'
+    - set_fact:
+        dev_root: /dev/vg/root
+        extra_packages: ',lvm2{{ extra_packages | default("") }}'
 - name: format root volume
   command: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root {{ dev_root }}
   delegate_to: '{{ jumphost }}'
@@ -78,5 +145,4 @@
 
 - set_fact:
     # comma-separated list of extra packages with leading comma
-    extra_packages: ',mdadm,lvm2'
-
+    extra_packages: ',mdadm{{ extra_packages | default("") }}'
