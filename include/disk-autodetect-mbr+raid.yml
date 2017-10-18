@@ -116,7 +116,7 @@
     - set_fact:
         dev_root: /dev/mapper/crypt_root
     - set_fact:
-        extra_packages: ",cryptsetup"
+        extra_packages: ",cryptsetup,busybox,dropbear-initramfs"
 
 - when: USE_lvm|default(false)|bool
   block:
