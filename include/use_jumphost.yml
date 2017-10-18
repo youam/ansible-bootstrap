@@ -30,7 +30,7 @@
         backup: yes
         line: '{{jumphost}},{{ hostkeys.stdout }}'
         regexp: '{{ ansible_ssh_host }}'
-  when: trust == true
+  when: USE_trustanysshkey
 
 - name: set hostname of remote system
   # Connect to rescue system and update the hostname.
