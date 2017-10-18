@@ -186,7 +186,11 @@
     - lineinfile:
         dest: /etc/fstab
         line: 'LABEL=boot /boot ext3 defaults 0 2'
-      # exists? probably because manual mount above
+    - lineinfile:
+        dest: /etc/crypttab
+        line: 'crypt_root  {{ dev_crypt }}    none        luks'
+      notify: update-initramfs
+      when: when: USE_encryption|default(false)|bool
     - file: path=/etc/mtab state=link src=/proc/mounts
 
     - lineinfile: dest=/etc/default/grub regexp='GRUB_CMDLINE_LINUX_DEFAULT=' line='GRUB_CMDLINE_LINUX_DEFAULT="quiet ip={{ network.eth0.address }}::{{ network.eth0.gateway }}:{{ network.eth0.netmask }}:{{ inventory_hostname }}:eth0:none"'
