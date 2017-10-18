@@ -44,7 +44,7 @@
     ## Scene 2: install target system os into chroot
 
     - name: debootstrap base system
-      command: debootstrap --include sudo,openssh-server,linux-image-amd64,grub-pc,busybox,firmware-linux-free,dropbear,kbd,console-setup,python,aptitude{{ extra_packages }} {{ target_release }} {{ dir_root }} http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian
+      command: debootstrap --include sudo,openssh-server,python,aptitude {{ target_release }} {{ dir_root }} {{ target_mirror }}
       delegate_to: '{{ jumphost }}'
 
 ###############################################################################
@@ -119,18 +119,28 @@
 ###############################################################################
 ## 5) Setup target system to be rebootable
 
-# for some reason, we've lost our apt sources list
+# make the new host be a member of its distribution group, so we can use group_vars
+- hosts: 'reimage_nfs'
+  accelerate: false
+  # when this task fails, probably the files/ansible_authorized_keys pubkey isn't what it should be.
+  gather_facts: yes
+
+  tasks:
+    - group_by: 'key={{ ansible_distribution_release }}'
+
 - hosts: 'reimage_nfs'
   accelerate: false
   gather_facts: no
 
   tasks:
     - name: Configure minimal sources.list file
-      # when this task fails, probably the files/ansible_authorized_keys pubkey isn't what it should be.
       lineinfile:
         dest: /etc/apt/sources.list
-        line: 'deb http://{{ debian_mirror | default("ftp.de.debian.org") }}/debian {{ target_release }} main'
+        line: 'deb {{ target_mirror }} {{ target_release }} {{ target_components }}'
+        regexp: '^deb '
     - command: apt-get update
+    - name: install boot packages
+      apt: "pkg=grub-pc,kbd,console-setup,{{ pkg_linux_image }}{{ extra_packages }}"
 
 # second play
 #   we can connect as our service user, now set it up so that ansible can run
