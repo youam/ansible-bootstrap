@@ -193,10 +193,13 @@
       when: when: USE_encryption|default(false)|bool
     - file: path=/etc/mtab state=link src=/proc/mounts
 
-    - lineinfile: dest=/etc/default/grub regexp='GRUB_CMDLINE_LINUX_DEFAULT=' line='GRUB_CMDLINE_LINUX_DEFAULT="quiet ip={{ network.eth0.address }}::{{ network.eth0.gateway }}:{{ network.eth0.netmask }}:{{ inventory_hostname }}:eth0:none"'
-    - command: update-grub
-    - command: update-initramfs -k all -u
-    - command: grub-install /dev/sda
+    - lineinfile:
+        dest: /etc/default/grub
+        regexp: 'GRUB_CMDLINE_LINUX_DEFAULT='
+        line: 'GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 biosdevname=0 ip={{ network.eth0.address }}::{{ network.eth0.gateway }}:{{ network.eth0.netmask }}:{{ inventory_hostname }}:enp0s8:none"'
+      notify: update-grub
+    - command: grub-install {{ item }}
+      with_items: '{{ devices }}'
 
     - name: Configure /etc/network/interfaces
       template: src=templates/interfaces.j2 dest=/etc/network/interfaces
@@ -208,3 +211,8 @@
 #      local_action: 'wait_for host={{ inventory_hostname }} port={{ ansible_ssh_port | default(22) }} state=started'
 #      sudo: false
 
+  handlers:
+    - name: update-initramfs
+      command: update-initramfs -k all -u
+    - name: update-grub
+      command: update-grub
