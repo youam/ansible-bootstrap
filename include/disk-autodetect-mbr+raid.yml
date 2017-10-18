@@ -20,7 +20,7 @@
     parttable_dump=files/sfdisk.boot+root+lvm
 - set_fact:
     parttable_dump=files/sfdisk.boot+lvm
-  when: USE_lvm
+  when: USE_lvm|default(false)|bool
 
 - name: copy partition table dump
   copy: src={{ parttable_dump }} dest=/tmp/parttable_dump
@@ -68,7 +68,7 @@
   command: 'mkfs.ext3 -L boot {{ dev_boot }}'
   delegate_to: '{{ jumphost }}'
 
-- when: USE_encryption
+- when: USE_encryption|default(false)|bool
   block:
     #- file: path=/lib/cryptsetup/passfifo state=fifo
     - shell: rm -rf /tmp/cryptkey ; mkfifo /tmp/cryptkey
@@ -118,7 +118,7 @@
     - set_fact:
         extra_packages: ",cryptsetup"
 
-- when: USE_lvm
+- when: USE_lvm|default(false)|bool
   block:
     - command: pvcreate {{ dev_root }}
       delegate_to: '{{ jumphost }}'
