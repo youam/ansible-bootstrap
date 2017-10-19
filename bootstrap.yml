@@ -184,7 +184,7 @@
         dest: /etc/crypttab
         line: 'crypt_root  {{ dev_crypt }}    none        luks'
       notify: update-initramfs
-      when: when: USE_encryption|default(false)|bool
+      when: USE_encryption|default(false)|bool
     - name: Create mtab symblink to give mount(1) the ability to know mounts
       file: path=/etc/mtab state=link src=/proc/mounts
 
