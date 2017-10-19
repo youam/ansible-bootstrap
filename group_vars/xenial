@@ -1,0 +1,3 @@
+pkg_linux_image: linux-image-generic
+
+target_components: main universe
