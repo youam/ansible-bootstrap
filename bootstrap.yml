@@ -199,6 +199,12 @@
     - name: Configure /etc/network/interfaces
       template: src=templates/interfaces.j2 dest=/etc/network/interfaces
 
+    - file: dest=/etc/initramfs-tools/root state=directory
+    - file: dest=/etc/initramfs-tools/root/.ssh state=directory
+    - name: Allow users to remotely authorize to dropbear while booting
+      copy: src=files/cryptlock_authorized_keys dest=/etc/initramfs-tools/root/.ssh/authorized_keys
+      notify: update-initramfs
+
 #    - command: reboot
 #      delegate_to: '{{ jumphost }}'
 
