@@ -106,12 +106,6 @@
         mode: 0444
       delegate_to: '{{ jumphost }}'
 
-    - name: Install sudoers
-      command: chroot {{ dir_root }} aptitude install sudo
-      args:
-        creates: '{{ dir_root }}/usr/bin/sudo'
-      delegate_to: '{{ jumphost }}'
-
     - name: Copy sudoers
       template: src=templates/sudoers.j2 dest={{ dir_root }}/etc/sudoers.d/ansible group=root owner=root mode=440
       delegate_to: '{{ jumphost }}'
