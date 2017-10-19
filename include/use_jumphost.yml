@@ -7,7 +7,8 @@
 - set_fact:
     jumphost: 'rescue-{{ inventory_hostname }}'
 
-- block:
+- when: USE_trustanysshkey|default(true)|bool
+  block:
     # FIXME this records a hash for the IP address of the target system. this
     # should better go to /etc/ssh/ssh_known_hosts
     - name: fetch remote ssh host key for rescue host
@@ -30,7 +31,6 @@
         backup: yes
         line: '{{jumphost}},{{ hostkeys.stdout }}'
         regexp: '{{ ansible_ssh_host }}'
-  when: USE_trustanysshkey
 
 - name: set hostname of remote system
   # Connect to rescue system and update the hostname.

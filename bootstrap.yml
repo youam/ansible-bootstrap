@@ -119,8 +119,8 @@
 ###############################################################################
 ## 5) Setup target system to be rebootable
 
-# make the new host be a member of its distribution group, so we can use group_vars
 - hosts: 'reimage_nfs'
+  name: Sort host into group depending on its ansible_distribution_release
   accelerate: false
   # when this task fails, probably the files/ansible_authorized_keys pubkey isn't what it should be.
   gather_facts: yes
@@ -191,7 +191,8 @@
         line: 'crypt_root  {{ dev_crypt }}    none        luks'
       notify: update-initramfs
       when: when: USE_encryption|default(false)|bool
-    - file: path=/etc/mtab state=link src=/proc/mounts
+    - name: Create mtab symblink to give mount(1) the ability to know mounts
+      file: path=/etc/mtab state=link src=/proc/mounts
 
     - lineinfile:
         dest: /etc/default/grub
