@@ -14,7 +14,7 @@
 - set_fact:
     # discover all devices ansible can find
     # those will get wiped. don't say i didn't warn you
-    devices: '{{ ansible_devices.keys()|select("match","sd")|format_list("/dev/%s") }}'
+    devices: '{{ ansible_devices|dict2list("device")|rejectattr("sectors","equalto","0")|map(attribute="device")|format_list("/dev/%s") }}'
 
 - set_fact:
     parttable_dump=files/sfdisk.boot+root+lvm
