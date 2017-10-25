@@ -26,43 +26,57 @@
   copy: src={{ parttable_dump }} dest=/tmp/parttable_dump
   delegate_to: '{{ jumphost }}'
 
+- when: not USE_raid|default(true)|bool
+  block:
+    - name: die if there're more than one device in non-raid setups
+      assert:
+        that:
+          - '{{ devices|length }} == 1'
+    - set_fact:
+        dev_boot: ' {{ devices[0] }}1'
+        dev_root: ' {{ devices[0] }}2'
+
 - name: partition devices
   shell: 'sfdisk -L {{ item }} < /tmp/parttable_dump'
   delegate_to: '{{ jumphost }}'
   with_items: '{{ devices }}'
 
-- set_fact:
-    dev_boot: '/dev/md/boot'
-    dev_root: '/dev/md/root'
+- when: USE_raid|default(true)|bool
+  block:
+    - set_fact:
+        dev_boot: '/dev/md/boot'
+        dev_root: '/dev/md/root'
 
-- name: remove old raid superblocks from partitions
-  shell: mdadm --zero-superblock {{ item }}
-  delegate_to: '{{ jumphost }}'
-  with_items: '{{ devices|format_list("%s1") }}'
-- name: remove old raid superblocks from partitions
-  shell: mdadm --zero-superblock {{ item }}
-  delegate_to: '{{ jumphost }}'
-  with_items: '{{ devices|format_list("%s2") }}'
+    - name: remove old raid superblocks from partitions
+      shell: mdadm --zero-superblock {{ item }}
+      delegate_to: '{{ jumphost }}'
+      with_items: '{{ devices|format_list("%s1") }}'
+    - name: remove old raid superblocks from partitions
+      shell: mdadm --zero-superblock {{ item }}
+      delegate_to: '{{ jumphost }}'
+      with_items: '{{ devices|format_list("%s2") }}'
 
-- name: create 'boot' raid device
-  shell: 'mdadm --create /dev/md3 --raid-devices={{ devices|length }} --level=1 --bitmap=internal --name=boot {{ devices|format_list("%s1")|join(" ") }} --metadata=1.2'
-  delegate_to: '{{ jumphost }}'
-- name: create 'root' raid device
-  shell: 'mdadm --create /dev/md4 --raid-devices={{ devices|length }} --level=1 --bitmap=internal --name=root {{ devices|format_list("%s2")|join(" ") }} --metadata=1.2'
-  delegate_to: '{{ jumphost }}'
+    - name: create 'boot' raid device
+      shell: 'mdadm --create /dev/md3 --raid-devices={{ devices|length }} --level=1 --bitmap=internal --name=boot {{ devices|format_list("%s1")|join(" ") }} --metadata=1.2'
+      delegate_to: '{{ jumphost }}'
+    - name: create 'root' raid device
+      shell: 'mdadm --create /dev/md4 --raid-devices={{ devices|length }} --level=1 --bitmap=internal --name=root {{ devices|format_list("%s2")|join(" ") }} --metadata=1.2'
+      delegate_to: '{{ jumphost }}'
 
-# restart mdadm so that udev devices get created.
-# XXX perhaps that can be avoided with --auto=p or something above?
-- command: 'mdadm --stop {{ item }}'
-  delegate_to: '{{ jumphost }}'
-  with_items: [ "/dev/md3", "/dev/md4" ]
-- shell: sed /ARRAY/d -i /etc/mdadm/mdadm.conf
-  delegate_to: '{{ jumphost }}'
-- shell: mdadm --examine --scan >> /etc/mdadm/mdadm.conf
-  delegate_to: '{{ jumphost }}'
-- shell: mdadm --assemble --scan
-  failed_when: false
-  delegate_to: '{{ jumphost }}'
+    # restart mdadm so that udev devices get created.
+    # XXX perhaps that can be avoided with --auto=p or something above?
+    - command: 'mdadm --stop {{ item }}'
+      delegate_to: '{{ jumphost }}'
+      with_items: [ "/dev/md3", "/dev/md4" ]
+    - shell: sed /ARRAY/d -i /etc/mdadm/mdadm.conf
+      delegate_to: '{{ jumphost }}'
+    - shell: mdadm --examine --scan >> /etc/mdadm/mdadm.conf
+      delegate_to: '{{ jumphost }}'
+    - shell: mdadm --assemble --scan
+      failed_when: false
+      delegate_to: '{{ jumphost }}'
+    - set_fact:
+        extra_packages: ',mdadm{{ extra_packages | default("") }}'
 
 - name: format boot partition
   command: 'mkfs.ext3 -L boot {{ dev_boot }}'
@@ -142,7 +156,3 @@
 
 - command: mount {{ dev_boot }} {{ dir_root }}/boot
   delegate_to: '{{ jumphost }}'
-
-- set_fact:
-    # comma-separated list of extra packages with leading comma
-    extra_packages: ',mdadm{{ extra_packages | default("") }}'
