@@ -180,11 +180,15 @@
     - lineinfile:
         dest: /etc/fstab
         line: 'LABEL=boot /boot ext3 defaults 0 2'
-    - lineinfile:
-        dest: /etc/crypttab
-        line: 'crypt_root  {{ dev_crypt }}    none        luks'
-      notify: update-initramfs
-      when: USE_encryption|default(false)|bool
+    - when: USE_encryption|default(false)|bool
+      block:
+        - name: lookup dev_crypt's uuid
+          command: 'blkid -s UUID -o value {{ dev_crypt }}'
+          register: reg_dev_crypt_uuid
+        - lineinfile:
+            dest: /etc/crypttab
+            line: 'crypt_root  UUID={{ reg_dev_crypt_uuid.stdout }}    none        luks'
+          notify: update-initramfs
     - name: Create mtab symblink to give mount(1) the ability to know mounts
       file: path=/etc/mtab state=link src=/proc/mounts
 
