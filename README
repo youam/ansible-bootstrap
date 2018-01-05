@@ -8,7 +8,7 @@ Put the public SSH key with which you want to login into files/ansible_authorize
 
 Configure the host as given in host_vars/examplehost, and let the playbook run:
 
- $ time ansible-playbook provision-nfs-mbr.yml --diff -v --sudo --limit examplehost
+ $ time ansible-playbook bootstrap.yml --diff -v --become --limit examplehost
 
 Obviously, this will wipe that host, so be careful and better read the playbook
 first...
