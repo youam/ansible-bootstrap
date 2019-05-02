@@ -24,7 +24,6 @@
 #    from within (bootloaders, networking)
 
 - hosts: 'reimage_nfs'
-  accelerate: false
   gather_facts: no
 
   tasks:
@@ -115,7 +114,6 @@
 
 - hosts: 'reimage_nfs'
   name: Sort host into group depending on its ansible_distribution_release
-  accelerate: false
   # when this task fails, probably the files/ansible_authorized_keys pubkey isn't what it should be.
   gather_facts: yes
 
@@ -123,7 +121,6 @@
     - group_by: 'key={{ ansible_distribution_release }}'
 
 - hosts: 'reimage_nfs'
-  accelerate: false
   gather_facts: no
 
   tasks:
@@ -139,7 +136,6 @@
 # second play
 #   we can connect as our service user, now set it up so that ansible can run
 - hosts: 'reimage_nfs'
-  accelerate: false
   gather_facts: no
 
   tasks:
@@ -171,7 +167,6 @@
 # third play
 #   setup system so that it's rebootable
 - hosts: 'reimage_nfs'
-  accelerate: false
 
   tasks:
     - lineinfile:
