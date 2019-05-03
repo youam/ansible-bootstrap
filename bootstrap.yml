@@ -242,13 +242,32 @@
             dest: /etc/crypttab
             line: 'crypt_root  UUID={{ reg_dev_crypt_uuid.stdout }}    none        luks'
           notify: update-initramfs
+        - set_fact:
+            USE_static_network_on_boot: true
+        - file:
+            dest: /etc/initramfs-tools/root
+            state: directory
+        - file:
+            dest: /etc/initramfs-tools/root/.ssh
+            state: directory
+        - name: Allow users to remotely authorize to dropbear while booting
+          copy:
+            src: files/cryptlock_authorized_keys
+            dest: /etc/dropbear-initramfs/id_rsa.pub
+          notify: update-initramfs
+
+        - name: Allow users to remotely authorize to dropbear while booting
+          copy:
+            src: files/cryptlock_authorized_keys
+            dest: /etc/initramfs-tools/root/.ssh/authorized_keys
+          notify: update-initramfs
     - name: Create mtab symblink to give mount(1) the ability to know mounts
       file: path=/etc/mtab state=link src=/proc/mounts
 
     - lineinfile:
         dest: /etc/default/grub
         regexp: 'GRUB_CMDLINE_LINUX_DEFAULT='
-        line: 'GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 biosdevname=0 ip={{ network.eth0.address }}::{{ network.eth0.gateway }}:{{ network.eth0.netmask }}:{{ inventory_hostname }}:eth0:none"'
+        line: 'GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 biosdevname=0{% if USE_static_network_on_boot|default(false)|bool %} ip={{ network.eth0.address }}::{{ network.eth0.gateway }}:{{ network.eth0.netmask }}:{{ inventory_hostname }}:eth0:none{% endif %}"'
       notify: update-grub
     - command: grub-install {{ item }}
       with_items: '{{ devices }}'
@@ -256,11 +275,6 @@
     - name: Configure /etc/network/interfaces
       template: src=templates/interfaces.j2 dest=/etc/network/interfaces
 
-    - file: dest=/etc/initramfs-tools/root state=directory
-    - file: dest=/etc/initramfs-tools/root/.ssh state=directory
-    - name: Allow users to remotely authorize to dropbear while booting
-      copy: src=files/cryptlock_authorized_keys dest=/etc/initramfs-tools/root/.ssh/authorized_keys
-      notify: update-initramfs
 
 #    - command: reboot
 #      delegate_to: '{{ jumphost }}'
