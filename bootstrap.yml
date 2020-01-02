@@ -107,12 +107,18 @@
 ###############################################################################
 ## 4) Start in-chroot sshd so we can connect there
 
+    - file:
+        dest: '{{ dir_root }}/run/udev'
+        state: directory
+      delegate_to: '{{ jumphost }}'
+
     - command: 'mount --bind /{{ item }} {{ dir_root }}/{{ item }}'
       with_items:
         - dev
         - dev/pts
         - proc
         - sys
+        - run/udev
       delegate_to: '{{ jumphost }}'
 
     - name: switch ssh port to 516
