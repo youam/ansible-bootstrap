@@ -94,8 +94,195 @@
   gather_facts: no
   name: Partition disks and install base system
   tasks:
+    - setup:
+      delegate_to: '{{ jumphost }}'
 
-    - include: include/disk-autodetect-gpt+raid.yml
+    - set_fact:
+        dir_root: /mnt/root
+
+    # Stop whatever's there
+    # =====================
+
+    - name: umount anything mounted by a potential previous run
+      shell: "mount | grep {{ dir_root }} | awk '{print $3}' | tac | xargs -r umount"
+      delegate_to: '{{ jumphost }}'
+
+    - name: vgchange
+      command: vgchange -an
+      delegate_to: '{{ jumphost }}'
+
+    - name: stop lvm
+      service: name=lvm2 state=stopped
+      delegate_to: '{{ jumphost }}'
+
+    - name: remove crypt_root
+      command: dmsetup remove crypt_root
+      failed_when: false
+      delegate_to: '{{ jumphost }}'
+
+    - name: stop whatever's there - raid
+      shell: mdadm --stop /dev/md/*
+      failed_when: false
+      delegate_to: '{{ jumphost }}'
+
+    - name: create mountpoint for system installation
+      file: dest={{ dir_root }} state=directory
+      delegate_to: '{{ jumphost }}'
+
+    - set_fact:
+        # discover all devices ansible can find
+        # those will get wiped. don't say i didn't warn you
+        devices: '{{ ansible_devices|dict2list("device")|rejectattr("device","search","md")|rejectattr("device","equalto","sr0")|rejectattr("device","search","ram")|rejectattr("device","search","loop")|rejectattr("sectors","equalto","0")|map(attribute="device")|format_list("/dev/%s") }}'
+
+    - set_fact:
+        sys_devices: '{{ devices }}'
+      when: sys_devices is not defined
+
+    - name: Select partitioning scheme - default
+      set_fact:
+        parttable_dump=files/sfdisk.gpt.boot+lvm
+    - name: Select partitioning scheme - dedicated root
+      set_fact:
+        parttable_dump=files/sfdisk.gpt.boot+root+lvm
+      when: USE_dedicated_rootpart|default(false)|bool
+
+    - name: copy partition table dump
+      copy: src={{ parttable_dump }} dest=/tmp/parttable_dump
+      delegate_to: '{{ jumphost }}'
+
+    - set_fact:
+        ptno_boot: 3
+        ptno_root: 4
+
+    - when: not USE_raid|default(true)|bool
+      block:
+        - name: die if there're more than one device in non-raid setups
+          assert:
+            that:
+              - '{{ sys_devices|length }} == 1'
+        - set_fact:
+            dev_boot: '{{ lookup("partname", sys_devices[0], ptno_boot ) }}'
+            dev_root: '{{ lookup("partname", sys_devices[0], ptno_root ) }}'
+
+    - name: partition devices
+      shell: 'sfdisk --wipe-partitions=always {{ item }} < /tmp/parttable_dump'
+      delegate_to: '{{ jumphost }}'
+      with_items: '{{ sys_devices }}'
+
+    - when: USE_raid|default(true)|bool
+      block:
+        - set_fact:
+            dev_boot: '/dev/md/boot'
+            dev_root: '/dev/md/root'
+
+        - name: create 'boot' raid device
+          shell: 'mdadm --create {{ dev_boot }} --raid-devices={{ sys_devices|length }} --level=1 --bitmap=internal --name=boot {{ sys_devices|partnames("3")|join(" ") }} --metadata=1.2'
+          delegate_to: '{{ jumphost }}'
+        - set_fact:
+            sys_raid_level: '{% if sys_devices|length == 2 %}1{% else %}5{% endif %}'
+        - name: create 'root' raid device
+          shell: 'mdadm --create {{ dev_root }} --raid-devices={{ sys_devices|length }} --level={{ sys_raid_level }} --bitmap=internal --name=root {{ sys_devices|partnames("4")|join(" ") }} --metadata=1.2'
+          delegate_to: '{{ jumphost }}'
+
+        # restart mdadm so that udev devices get created.
+        # XXX perhaps that can be avoided with --auto=p or something above?
+        - name: Stop raid again
+          shell: mdadm --stop /dev/md/*
+          delegate_to: '{{ jumphost }}'
+        - shell: sed /ARRAY/d -i /etc/mdadm/mdadm.conf
+          delegate_to: '{{ jumphost }}'
+        - shell: mdadm --examine --scan >> /etc/mdadm/mdadm.conf
+          delegate_to: '{{ jumphost }}'
+        - shell: mdadm --assemble --scan
+          failed_when: false
+          delegate_to: '{{ jumphost }}'
+        - set_fact:
+            extra_packages: ',mdadm{{ extra_packages | default("") }}'
+
+            #- shell: mkdosfs -F 32 -n "EFI BOOT" /dev/sda2
+            #  delegate_to: '{{ jumphost }}'
+      #- shell: dd if=/dev/sda2 of=/dev/sdb2 bs=1024k
+      #delegate_to: '{{ jumphost }}'
+      #with_items: everything in devices except sda2
+
+    - name: format boot partition
+      command: 'mkfs.ext3 -L boot {{ dev_boot }}'
+      delegate_to: '{{ jumphost }}'
+
+    - when: USE_encryption|default(false)|bool
+      block:
+        #- file: path=/lib/cryptsetup/passfifo state=fifo
+        - shell: rm -rf /tmp/cryptkey ; mkfifo /tmp/cryptkey
+          delegate_to: '{{ jumphost }}'
+
+        # run this command in the background, but check later
+        - shell: cryptsetup luksFormat {{ dev_root }} --key-file /tmp/cryptkey
+          async: 1000
+          poll: 0
+          register: cryptsetup
+          delegate_to: '{{ jumphost }}'
+
+
+        - shell: 'echo {{ secret_root_luks }} > /tmp/cryptkey'
+          delegate_to: '{{ jumphost }}'
+
+        - name: "wait for cryptsetup"
+          async_status: 'jid={{ cryptsetup.ansible_job_id }}'
+          register: job_result
+          until: job_result is defined and job_result.finished is defined and job_result.finished
+          retries: 30
+          delegate_to: '{{ jumphost }}'
+
+
+        # run this command in the background, but check later
+        - shell: cryptsetup luksOpen {{ dev_root }} crypt_root --key-file /tmp/cryptkey
+          async: 1000
+          poll: 0
+          register: cryptsetup
+          delegate_to: '{{ jumphost }}'
+
+        - shell: 'echo {{ secret_root_luks }} > /tmp/cryptkey'
+          delegate_to: '{{ jumphost }}'
+
+        - name: "wait for cryptsetup"
+          async_status: 'jid={{ cryptsetup.ansible_job_id }}'
+          register: job_result
+          until: job_result is defined and job_result.finished is defined and job_result.finished
+          retries: 30
+          delegate_to: '{{ jumphost }}'
+
+        # Switch root/crypt devices
+        - set_fact:
+            dev_crypt: '{{ dev_root }}'
+        - set_fact:
+            dev_root: /dev/mapper/crypt_root
+        - set_fact:
+            extra_packages: ',cryptsetup,busybox,dropbear-initramfs{{ extra_packages | default("") }}'
+
+    - when: USE_lvm|default(false)|bool
+      block:
+        - command: pvcreate {{ dev_root }}
+          delegate_to: '{{ jumphost }}'
+        - command: vgcreate vg {{ dev_root }}
+          delegate_to: '{{ jumphost }}'
+        - command: lvcreate -L 16g -n root vg --wipesignatures y
+          delegate_to: '{{ jumphost }}'
+        - set_fact:
+            dev_root: /dev/vg/root
+            extra_packages: ',lvm2{{ extra_packages | default("") }}'
+    - name: format root volume
+      command: mkfs.ext4 -E stride=16384,stripe-width=16384,lazy_itable_init -L root {{ dev_root }}
+      delegate_to: '{{ jumphost }}'
+
+    - name: mount root file system
+      command: mount {{ dev_root }} {{ dir_root }}
+      delegate_to: '{{ jumphost }}'
+
+    - command: mkdir {{ dir_root }}/boot
+      delegate_to: '{{ jumphost }}'
+
+    - command: mount {{ dev_boot }} {{ dir_root }}/boot
+      delegate_to: '{{ jumphost }}'
 
     ###########################################################################
     ## Scene 2: install target system os into chroot
