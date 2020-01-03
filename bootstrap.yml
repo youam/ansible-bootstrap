@@ -151,6 +151,7 @@
       delegate_to: '{{ jumphost }}'
 
     - set_fact:
+        ptno_efi: 2
         ptno_boot: 3
         ptno_root: 4
 
@@ -161,6 +162,7 @@
             that:
               - '{{ sys_devices|length }} == 1'
         - set_fact:
+            dev_efi: '{{ lookup("partname", sys_devices[0], ptno_efi ) }}'
             dev_boot: '{{ lookup("partname", sys_devices[0], ptno_boot ) }}'
             dev_root: '{{ lookup("partname", sys_devices[0], ptno_root ) }}'
 
@@ -199,11 +201,11 @@
         - set_fact:
             extra_packages: ',mdadm{{ extra_packages | default("") }}'
 
-            #- shell: mkdosfs -F 32 -n "EFI BOOT" /dev/sda2
-            #  delegate_to: '{{ jumphost }}'
-      #- shell: dd if=/dev/sda2 of=/dev/sdb2 bs=1024k
-      #delegate_to: '{{ jumphost }}'
-      #with_items: everything in devices except sda2
+    - shell: 'mkdosfs -F 32 -n "EFI BOOT" {{ dev_efi }}'
+      delegate_to: '{{ jumphost }}'
+    #- shell: dd if=/dev/sda2 of=/dev/sdb2 bs=1024k
+    #  delegate_to: '{{ jumphost }}'
+    #  with_items: everything in devices except sda2
 
     - name: format boot partition
       command: 'mkfs.ext3 -L boot {{ dev_boot }}'
@@ -282,6 +284,9 @@
       delegate_to: '{{ jumphost }}'
 
     - command: mount {{ dev_boot }} {{ dir_root }}/boot
+      delegate_to: '{{ jumphost }}'
+
+    - command: mount {{ dev_efi }} {{ dir_root }}/boot/efi
       delegate_to: '{{ jumphost }}'
 
     ###########################################################################
@@ -426,6 +431,9 @@
     - lineinfile:
         dest: /etc/fstab
         line: 'LABEL=boot /boot ext3 defaults 0 2'
+    - lineinfile:
+        dest: /etc/fstab
+        line: '{{ dev_efi }} /boot/efi fat32 defaults 0 0'
     - when: USE_encryption|default(false)|bool
       block:
         - name: lookup dev_crypt's uuid
