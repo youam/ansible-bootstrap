@@ -463,7 +463,7 @@
         line: 'GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 biosdevname=0{% if USE_static_network_on_boot|default(false)|bool %} ip={{ network.eth0.address }}::{{ network.eth0.gateway }}:{{ network.eth0.netmask }}:{{ inventory_hostname }}:eth0:none{% endif %}"'
       notify: update-grub
     - command: grub-install {{ item }}
-      with_items: '{{ devices }}'
+      with_items: '{{ sys_devices }}'
 
     - name: Configure /etc/network/interfaces
       template: src=templates/interfaces.j2 dest=/etc/network/interfaces
