@@ -263,11 +263,14 @@
 
     - when: USE_lvm|default(false)|bool
       block:
-        - command: pvcreate {{ dev_root }}
+        - name: Create PV
+          command: pvcreate {{ dev_root }}
           delegate_to: '{{ jumphost }}'
-        - command: vgcreate vg {{ dev_root }}
+        - name: Create VG
+          command: vgcreate vg {{ dev_root }}
           delegate_to: '{{ jumphost }}'
-        - command: lvcreate -L 16g -n root vg --wipesignatures y
+        - name: Create root LV
+          command: lvcreate -L 16g -n root vg --wipesignatures y --yes
           delegate_to: '{{ jumphost }}'
         - set_fact:
             dev_root: /dev/vg/root
@@ -403,11 +406,11 @@
 
     - name: install python-apt (for lsb-release)
       command: aptitude install --assume-yes python-apt
-      when: result|failed
+      when: result is failed
 
     - name: install lsb-release (try again)
       apt: name="lsb-release" state=present
-      when: result|failed
+      when: result is failed
 
     - name: Create SSH directory
       file: path=/home/{{ ansible_role_account }}/.ssh state=directory owner={{ ansible_role_account }} mode=700
