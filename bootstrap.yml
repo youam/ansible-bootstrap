@@ -138,6 +138,7 @@
         sys_devices: '{{ devices }}'
       when: sys_devices is not defined
 
+    # FIXME switch with USE_legacyboot
     - name: Select partitioning scheme - default
       set_fact:
         parttable_dump=files/sfdisk.gpt.boot+lvm
@@ -151,9 +152,14 @@
       delegate_to: '{{ jumphost }}'
 
     - set_fact:
-        ptno_efi: 2
         ptno_boot: 3
         ptno_root: 4
+        pkg_bootloader: grub-pc
+
+    - when: 'not (USE_legacyboot|default(false)|bool)'
+      set_fact:
+        ptno_efi: 2
+        pkg_bootloader: grub-efi
 
     - when: not USE_raid|default(true)|bool
       block:
@@ -162,9 +168,11 @@
             that:
               - '{{ sys_devices|length }} == 1'
         - set_fact:
-            dev_efi: '{{ lookup("partname", sys_devices[0], ptno_efi ) }}'
             dev_boot: '{{ lookup("partname", sys_devices[0], ptno_boot ) }}'
             dev_root: '{{ lookup("partname", sys_devices[0], ptno_root ) }}'
+        - when: 'not (USE_legacyboot|default(false)|bool)'
+          set_fact:
+            dev_efi: '{{ lookup("partname", sys_devices[0], ptno_efi ) }}'
 
     - name: partition devices
       shell: 'sfdisk --wipe-partitions=always {{ item }} < /tmp/parttable_dump'
@@ -203,6 +211,7 @@
 
     - shell: 'mkdosfs -F 32 -n "EFI BOOT" {{ dev_efi }}'
       delegate_to: '{{ jumphost }}'
+      when: 'not (USE_legacyboot|default(false)|bool)'
     #- shell: dd if=/dev/sda2 of=/dev/sdb2 bs=1024k
     #  delegate_to: '{{ jumphost }}'
     #  with_items: everything in devices except sda2
@@ -225,7 +234,7 @@
           delegate_to: '{{ jumphost }}'
 
 
-        - shell: 'echo {{ secret_root_luks }} > /tmp/cryptkey'
+        - shell: 'echo -n {{ secret_root_luks }} > /tmp/cryptkey'
           delegate_to: '{{ jumphost }}'
 
         - name: "wait for cryptsetup"
@@ -243,7 +252,9 @@
           register: cryptsetup
           delegate_to: '{{ jumphost }}'
 
-        - shell: 'echo {{ secret_root_luks }} > /tmp/cryptkey'
+        -
+          # cryptsetup cuts at newline for stdin and temrinal input, but not for file input. so we'll need to make sure there's no newine here either
+          shell: 'echo -n {{ secret_root_luks }} > /tmp/cryptkey'
           delegate_to: '{{ jumphost }}'
 
         - name: "wait for cryptsetup"
@@ -283,20 +294,29 @@
       command: mount {{ dev_root }} {{ dir_root }}
       delegate_to: '{{ jumphost }}'
 
-    - command: mkdir {{ dir_root }}/boot
+    - file:
+        path: '{{ dir_root }}/boot'
+        state: directory
       delegate_to: '{{ jumphost }}'
 
     - command: mount {{ dev_boot }} {{ dir_root }}/boot
       delegate_to: '{{ jumphost }}'
 
-    - command: mount {{ dev_efi }} {{ dir_root }}/boot/efi
-      delegate_to: '{{ jumphost }}'
+    - when: 'not (USE_legacyboot|default(false)|bool)'
+      block:
+        - file:
+            path: '{{ dir_root }}/boot/efi'
+            state: directory
+          delegate_to: '{{ jumphost }}'
+
+        - command: mount {{ dev_efi }} {{ dir_root }}/boot/efi
+          delegate_to: '{{ jumphost }}'
 
     ###########################################################################
     ## Scene 2: install target system os into chroot
 
     - name: debootstrap base system
-      command: debootstrap --include sudo,openssh-server,python,aptitude {{ target_release }} {{ dir_root }} {{ target_mirror }}
+      command: debootstrap --include sudo,openssh-server,python3,aptitude {{ target_release }} {{ dir_root }} {{ target_mirror }}
       delegate_to: '{{ jumphost }}'
 
 ###############################################################################
@@ -390,7 +410,7 @@
         regexp: '^deb '
     - command: apt-get update
     - name: install boot packages
-      apt: "pkg=grub-pc,kbd,console-setup,{{ pkg_linux_image }}{{ extra_packages }}"
+      apt: "pkg={{ pkg_bootloader }},kbd,console-setup,{{ pkg_linux_image }}{{ extra_packages }}"
 
 # second play
 #   we can connect as our service user, now set it up so that ansible can run
@@ -473,8 +493,8 @@
         regexp: 'GRUB_CMDLINE_LINUX_DEFAULT='
         line: 'GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 biosdevname=0{% if USE_static_network_on_boot|default(false)|bool %} ip={{ network.eth0.address }}::{{ network.eth0.gateway }}:{{ network.eth0.netmask }}:{{ inventory_hostname }}:eth0:none{% endif %}"'
       notify: update-grub
-    - command: grub-install {{ item }}
-      with_items: '{{ devices }}'
+    - command: 'grub-install {{ item }}{% if not USE_legacyboot|default(false)|bool %} --target x86_64-efi{%endif %}'
+      with_items: '{{ sys_devices }}'
 
     - name: Configure /etc/network/interfaces
       template: src=templates/interfaces.j2 dest=/etc/network/interfaces
