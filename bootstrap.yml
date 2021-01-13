@@ -313,7 +313,7 @@
     ## Scene 2: install target system os into chroot
 
     - name: debootstrap base system
-      command: debootstrap --include sudo,openssh-server,python,aptitude {{ target_release }} {{ dir_root }} {{ target_mirror }}
+      command: debootstrap --include sudo,openssh-server,python3,aptitude {{ target_release }} {{ dir_root }} {{ target_mirror }}
       delegate_to: '{{ jumphost }}'
 
 ###############################################################################
