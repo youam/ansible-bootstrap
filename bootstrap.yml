@@ -225,7 +225,7 @@
           delegate_to: '{{ jumphost }}'
 
 
-        - shell: 'echo {{ secret_root_luks }} > /tmp/cryptkey'
+        - shell: 'echo -n {{ secret_root_luks }} > /tmp/cryptkey'
           delegate_to: '{{ jumphost }}'
 
         - name: "wait for cryptsetup"
@@ -243,7 +243,9 @@
           register: cryptsetup
           delegate_to: '{{ jumphost }}'
 
-        - shell: 'echo {{ secret_root_luks }} > /tmp/cryptkey'
+        -
+          # cryptsetup cuts at newline for stdin and temrinal input, but not for file input. so we'll need to make sure there's no newine here either
+          shell: 'echo -n {{ secret_root_luks }} > /tmp/cryptkey'
           delegate_to: '{{ jumphost }}'
 
         - name: "wait for cryptsetup"
