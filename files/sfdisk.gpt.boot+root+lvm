@@ -1,0 +1,9 @@
+label: gpt
+unit: sectors
+first-lba: 34
+
+/dev/sda1 : start=          34, size=        2014, type=21686148-6449-6E6F-744E-656564454649, name="BIOS Boot Partition"
+/dev/sda2 : start=        2048, size=      524288, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="EFI Boot Partition"
+/dev/sda3 : start=      526336, size=     1048576, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name="Linux Boot Partition"
+/dev/sda4 : start=     1574912, size=    16777216, type=A19D880F-05FC-4D3B-A006-743F0F84911E, name="Linux Root Partition"
+/dev/sda5 : start=    18352128, type=A19D880F-05FC-4D3B-A006-743F0F84911E, name="Linux RAID Data"

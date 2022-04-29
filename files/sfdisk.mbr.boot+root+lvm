@@ -1,5 +1,4 @@
-# sfdisk -d devicefile
-# partition table of devicefile
+label: dos
 unit: sectors
 
 raw1 : start=     2048, size=   524288, Id=83, bootable

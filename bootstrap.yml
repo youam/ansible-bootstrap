@@ -138,27 +138,31 @@
         sys_devices: '{{ devices }}'
       when: sys_devices is not defined
 
-    # FIXME switch with USE_legacyboot
     - name: Select partitioning scheme - default
       set_fact:
-        parttable_dump=files/sfdisk.gpt.boot+lvm
+        parttable_dump=files/sfdisk.{% if USE_legacyboot|default(false)|bool %}mbr{% else %}gpt{% endif %}.boot+lvm
     - name: Select partitioning scheme - dedicated root
       set_fact:
-        parttable_dump=files/sfdisk.gpt.boot+root+lvm
+        parttable_dump=files/sfdisk.{% if USE_legacyboot|default(false)|bool %}mbr{% else %}gpt{% endif %}.boot+root+lvm
       when: USE_dedicated_rootpart|default(false)|bool
 
     - name: copy partition table dump
       copy: src={{ parttable_dump }} dest=/tmp/parttable_dump
       delegate_to: '{{ jumphost }}'
 
-    - set_fact:
-        ptno_boot: 3
-        ptno_root: 4
+    - name: Set variables for MBR boot schema
+      when: 'USE_legacyboot|default(false)|bool'
+      set_fact:
+        ptno_boot: 1
+        ptno_root: 2
         pkg_bootloader: grub-pc
 
-    - when: 'not (USE_legacyboot|default(false)|bool)'
+    - name: Set variables for GTP boot schema
+      when: 'not USE_legacyboot|default(false)|bool'
       set_fact:
         ptno_efi: 2
+        ptno_boot: 3
+        ptno_root: 4
         pkg_bootloader: grub-efi
 
     - when: not USE_raid|default(true)|bool
@@ -457,6 +461,7 @@
     - lineinfile:
         dest: /etc/fstab
         line: '{{ dev_efi }} /boot/efi fat32 defaults 0 0'
+      when: 'not USE_legacyboot|default(false)|bool'
     - when: USE_encryption|default(false)|bool
       block:
         - name: lookup dev_crypt's uuid
