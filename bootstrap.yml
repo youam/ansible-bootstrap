@@ -25,7 +25,7 @@
 
 - hosts: 'reimage_nfs'
   gather_facts: no
-  name: Verify permissions and access to target system
+  name: Verify access to and permissions on target system
 
   tasks:
     - name: Verify magic hostvar allowing us to wipe the target
